@@ -4,8 +4,11 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 from easydict import EasyDict as edict
-import marlgrid.envs
-import marlgrid
+# import marlgrid.envs
+# import marlgrid
+import sys
+sys.path.append('/home/isi/zeng/modifying-marl-ae-comm/marl-grid')
+from env.marlgrid.envs import register_env
 
 
 def create_grid_world_env(env_cfg):
@@ -14,7 +17,8 @@ def create_grid_world_env(env_cfg):
     """
     env_name = get_env_name(env_cfg)
 
-    env = marlgrid.envs.register_env(
+    env = register_env(
+    # env = marlgrid.envs.register_env(
         env_name=env_name,
         n_agents=env_cfg.num_agents,
         grid_size=env_cfg.grid_size,

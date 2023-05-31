@@ -1,6 +1,13 @@
 import numpy as np
 from enum import IntEnum
-from gym_minigrid.rendering import (
+# from gym_minigrid.rendering import (
+#     fill_coords,
+#     point_in_circle,
+#     point_in_rect,
+#     point_in_triangle,
+#     rotate_fn,
+# )
+from .utils.video import (
     fill_coords,
     point_in_circle,
     point_in_rect,
