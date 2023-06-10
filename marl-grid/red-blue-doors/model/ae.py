@@ -4,6 +4,7 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 import math
+import copy
 import numpy as np
 import torch
 import torch.nn as nn
@@ -11,8 +12,11 @@ import torch.nn.functional as F
 
 from model.a3c_template import A3CTemplate, take_action, take_comm_action
 from model.init import normalized_columns_initializer, weights_init
-from model.model_utils import LSTMhead, ImgModule
+from model.model_utils import LSTMhead, ImgModule, PosActionModule
 
+from util import ops
+
+# from ...env.marlgrid.envs import MultiGridEnv
 
 class STE(torch.autograd.Function):
     """Straight-Through Estimator"""
@@ -35,7 +39,8 @@ class InputProcessor(nn.Module):
     """
     def __init__(self, obs_space, comm_feat_len, num_agents, last_fc_dim=64):
         super(InputProcessor, self).__init__()
-
+        # obs_space:  = self.agent[0].observation_space
+        # check agents.py for details
         self.obs_keys = list(obs_space.spaces.keys())
         self.num_agents = num_agents
 
@@ -47,6 +52,8 @@ class InputProcessor(nn.Module):
         # state inputs processor
         state_feat_dim = 0
 
+        # config.observe_self_position = False
+        # config.observe_self_env_act = False
         if 'self_env_act' in self.obs_keys:
             # discrete value with one-hot encoding
             self.env_act_dim = obs_space.spaces['self_env_act'].n
@@ -151,10 +158,14 @@ class EncoderDecoder(nn.Module):
     def __init__(self, obs_space, comm_len, discrete_comm, num_agents,
                  ae_type='', img_feat_dim=64):
         super(EncoderDecoder, self).__init__()
-
-        self.preprocessor = InputProcessor(obs_space, 0, num_agents,
-                                           last_fc_dim=img_feat_dim)
-        in_size = self.preprocessor.feat_dim
+        # InputProcessor's init:
+        # def __init__(self, obs_space, comm_feat_len, num_agents, last_fc_dim=64):
+        # self.preprocessor = InputProcessor(obs_space, 0, num_agents,
+        #                                    last_fc_dim=img_feat_dim)
+        # in_size = self.preprocessor.feat_dim
+        # EncoderDecoder doesnt use preprocessor
+        in_size = img_feat_dim
+        self.in_size = in_size
 
         if ae_type == 'rfc':
             # random projection using fc
@@ -291,8 +302,8 @@ class AENetwork(A3CTemplate):
     """
     An network with AE comm.
     """
-    def __init__(self, obs_space, act_space, num_agents, comm_len,
-                 discrete_comm, ae_pg=0, ae_type='', hidden_size=256,
+    def __init__(self, obs_space, act_space, num_agents, comm_len, env,
+                 discrete_comm, pos_and_action_len=5, ae_pg=0, ae_type='', hidden_size=256,
                  img_feat_dim=64):
         super().__init__()
 
@@ -302,17 +313,27 @@ class AENetwork(A3CTemplate):
         self.ae_pg = ae_pg
 
         self.num_agents = num_agents
+        self.env = env
+        self.pos_and_action_len = pos_and_action_len
+        self.comm_len = comm_len
 
         self.comm_ae = EncoderDecoder(obs_space, comm_len, discrete_comm,
                                       num_agents, ae_type=ae_type,
                                       img_feat_dim=img_feat_dim)
+        # add an trajectory encoder
+        self.comm_tj = EncoderDecoder(obs_space, comm_len, discrete_comm,
+                                        num_agents, ae_type=ae_type,
+                                        img_feat_dim=img_feat_dim)
+        # feat_dim is img encoder's output size
+        feat_dim = img_feat_dim
 
-        feat_dim = self.comm_ae.preprocessor.feat_dim
-
+        # in input_processor, right now I'm concat the decoded ae_comm feat
+        # and decoded traj_comm feat (both size is 64), with the img encoder's
+        # output size (64)
         if ae_type == '':
             self.input_processor = InputProcessor(
                 obs_space,
-                feat_dim,
+                2*feat_dim,
                 num_agents,
                 last_fc_dim=img_feat_dim)
         else:
@@ -321,9 +342,12 @@ class AENetwork(A3CTemplate):
                 comm_len,
                 num_agents,
                 last_fc_dim=img_feat_dim)
+        
+        self.traj_processor = PosActionModule(pos_and_action_len, emb_size=64)
 
         # individual memories
-        self.feat_dim = self.input_processor.feat_dim + comm_len
+        # LSTM now will input: [img_encoded_feat, ae_comm_out, traj_comm_out]
+        self.feat_dim = self.input_processor.feat_dim + 2*comm_len
         self.head = nn.ModuleList(
             [LSTMhead(self.feat_dim, hidden_size, num_layers=1
                       ) for _ in range(num_agents)])
@@ -353,7 +377,7 @@ class AENetwork(A3CTemplate):
     def init_hidden(self):
         return [head.init_hidden() for head in self.head]
 
-    def take_action(self, policy_logit, comm_out):
+    def take_action(self, policy_logit, comm_out, traj_comm_out):
         act_dict = {}
         act_logp_dict = {}
         ent_list = []
@@ -366,8 +390,96 @@ class AENetwork(A3CTemplate):
             ent_list.append(ent)
 
             comm_act = (comm_out[int(agent_name[-1])]).cpu().numpy()
-            all_act_dict[agent_name] = [act, comm_act]
+            traj_comm_act = (traj_comm_out[int(agent_name[-1])]).cpu().numpy()
+            all_act_dict[agent_name] = [act, comm_act, traj_comm_act]
         return act_dict, act_logp_dict, ent_list, all_act_dict
+    
+    def generate_trajectory(self, inputs, hidden_state=None):
+        """ traj will be: [batch1 [action1, x1, y1, action2, x2, y2, ...]
+                            batch2 [ ... ]]]"""
+        trajs = [[] for _ in range(self.num_agents)]
+        comm_out = torch.empty((0, self.comm_len))
+        traj_comm_out = torch.empty((0, self.comm_len))
+        comm_out = comm_out.cuda()
+        traj_comm_out = traj_comm_out.cuda()
+        # if comm_out is None:
+        #     for i in range(self.num_agents):
+        #         for j in range(self.pos_and_action_len):
+        #             trajs[i].append(self.env.action_space.sample())
+        #             self_pos = self.env.get_agent_pos(i)
+        #             trajs[i].append(self_pos[0])
+        #             trajs[i].append(self_pos[1])
+        #     return trajs
+
+        temp_env = copy.deepcopy(self.env)
+        agents = temp_env.agents
+        for i in range(self.num_agents):
+            comm_out = torch.cat((comm_out, inputs[f'agent_{i}']['comm'][:-1]),dim=0)
+            traj_comm_out = torch.cat((traj_comm_out, inputs[f'agent_{i}']['traj_comm'][:-1]),dim=0)
+            # comm_out.append(inputs[f'agent_{i}']['comm'][:-1])
+            # traj_comm_out.append(inputs[f'agent_{i}']['traj_comm'][:-1])
+        for j in range(self.pos_and_action_len):
+            policy_logit, value, hidden_state = self.dummy_forward(inputs, comm_out,
+                                                                   traj_comm_out,
+                                                                   hidden_state)
+            all_act_dict = {}
+            for agent_name, logits in policy_logit.items():
+                act, _, _ = super(AENetwork, self).take_action(logits)
+                self_pos = temp_env.get_agent_pos(agents[int(agent_name[-1])])
+                trajs[int(agent_name[-1])].append(act)
+                trajs[int(agent_name[-1])].append(self_pos[0])
+                trajs[int(agent_name[-1])].append(self_pos[1])
+
+                comm_act = (comm_out[int(agent_name[-1])]).cpu().numpy()
+                traj_comm_act = (traj_comm_out[int(agent_name[-1])]).cpu().numpy()
+                all_act_dict[agent_name] = [act, comm_act, traj_comm_act]
+            inputs, _, _, _ = temp_env.step(all_act_dict)
+            inputs = ops.to_state_var(inputs)
+        trajs_torch = ops.to_torch(trajs)
+        return trajs_torch
+
+    def dummy_forward(self, inputs, comm_out, traj_comm_out, hidden_state=None, env_mask_idx=None):
+        """This dummy forward is used to get actions without updating comm"""
+        
+        assert type(inputs) is dict
+        assert len(inputs.keys()) == self.num_agents + 1  # agents + global
+        
+        # (1) pre-process inputs
+        comm_feat = []
+        for i in range(self.num_agents):
+            cf = self.comm_ae.decode(inputs[f'agent_{i}']['comm'][:-1])
+            traj_cf = self.comm_tj.decode(inputs[f'agent_{i}']['traj_comm'][:-1])
+            if not self.ae_pg:
+                cf = cf.detach()
+                traj_cf = traj_cf.detach()
+
+            cf = torch.cat([cf, traj_cf], dim=1)
+            comm_feat.append(cf)
+        # process inputs and cat with comm_feat
+        cat_feat = self.input_processor(inputs, comm_feat)
+        # skip (2)
+        # (3) predict policy and values separately
+        env_actor_out, env_critic_out = {}, {}
+
+        for i, agent_name in enumerate(inputs.keys()):
+            if agent_name == 'global':
+                continue
+            # before cat
+            # cat_feat.size: ([1,192]) comm_out.size:([1,10])
+            cat_feat[i] = torch.cat([cat_feat[i], comm_out[i].unsqueeze(0), \
+                                     traj_comm_out[i].unsqueeze(0)], \
+                                    dim=-1)
+            # input to head
+            x, hidden_state[i] = self.head[i](cat_feat[i], hidden_state[i])
+
+            env_actor_out[agent_name] = self.env_actor_linear[i](x)
+            env_critic_out[agent_name] = self.env_critic_linear[i](x)
+
+            # mask logits of unavailable actions if provided
+            if env_mask_idx and env_mask_idx[i]:
+                env_actor_out[agent_name][0, env_mask_idx[i]] = -1e10
+
+        return env_actor_out, env_critic_out, hidden_state
 
     def forward(self, inputs, hidden_state=None, env_mask_idx=None):
         assert type(inputs) is dict
@@ -375,21 +487,45 @@ class AENetwork(A3CTemplate):
 
         # WARNING: the following code only works for Python 3.6 and beyond
 
-        # (1) pre-process inputs
+        # # (1) pre-process inputs
+        # # self.comm_ae.decode will return φim(o(k) t )
+        # comm_feat = []
+        # for i in range(self.num_agents):
+        #     cf = self.comm_ae.decode(inputs[f'agent_{i}']['comm'][:-1])
+        #     if not self.ae_pg:
+        #         cf = cf.detach()
+        #     comm_feat.append(cf)
+        
+        # (1) pre-process inputs with trajectory
+        # comm's init
+        # self.comm = np.zeros((comm_len,), dtype=np.float32)
+        # TODO: make traj comm's init part
         comm_feat = []
         for i in range(self.num_agents):
+            # cf.size:([1,64])
             cf = self.comm_ae.decode(inputs[f'agent_{i}']['comm'][:-1])
+            traj_cf = self.comm_tj.decode(inputs[f'agent_{i}']['traj_comm'][:-1])
             if not self.ae_pg:
                 cf = cf.detach()
+                traj_cf = traj_cf.detach()
+            # TODO: check the size when debugging
+            cf = torch.cat([cf, traj_cf], dim=1)
             comm_feat.append(cf)
-
+        # process inputs and cat with comm_feat
         cat_feat = self.input_processor(inputs, comm_feat)
 
         # (2) generate AE comm output and reconstruction loss
         with torch.no_grad():
+            # just process the image
             x = self.input_processor(inputs)
+        # x.size:([2,64])
         x = torch.cat(x, dim=0)
         comm_out, comm_ae_loss = self.comm_ae(x)
+        # generate trajectory
+        # TODO: change the input to the right one
+        trajs = self.generate_trajectory(inputs, hidden_state)
+        traj_x = self.traj_processor(trajs)
+        traj_comm_out, traj_comm_ae_loss = self.comm_tj(traj_x)
 
         # (3) predict policy and values separately
         env_actor_out, env_critic_out = {}, {}
@@ -397,8 +533,12 @@ class AENetwork(A3CTemplate):
         for i, agent_name in enumerate(inputs.keys()):
             if agent_name == 'global':
                 continue
-
-            cat_feat[i] = torch.cat([cat_feat[i], comm_out[i].unsqueeze(0)],
+            
+            # cat img's encoder feat and comm_out for the policy network
+            # cat_feat[i] = torch.cat([cat_feat[i], comm_out[i].unsqueeze(0)],
+            #                         dim=-1)
+            cat_feat[i] = torch.cat([cat_feat[i], comm_out[i].unsqueeze(0), 
+                                     traj_comm_out[i].unsqueeze(0)],
                                     dim=-1)
 
             x, hidden_state[i] = self.head[i](cat_feat[i], hidden_state[i])
@@ -411,4 +551,5 @@ class AENetwork(A3CTemplate):
                 env_actor_out[agent_name][0, env_mask_idx[i]] = -1e10
 
         return env_actor_out, env_critic_out, hidden_state, \
-               comm_out.detach(), comm_ae_loss
+               comm_out.detach(), comm_ae_loss, traj_comm_out.detach(), \
+               traj_comm_ae_loss

@@ -109,6 +109,37 @@ class CommModule(nn.Module):
             return hidden[-1]
         else:
             return emb.view(B, -1)
+        
+class PosActionModule(nn.Module):
+    """Process discrete / continuous binary messages of shape
+    (B, num_agents, comm_len)."""
+    # def __init__(self, pos_action_size, hidden_size,
+    #              emb_size, pos_action_rnn):
+    def __init__(self, pos_action_size, emb_size, last_fc_dim=64):
+        super(PosActionModule, self).__init__()
+        assert pos_action_size == 5
+
+        self.fc = nn.Sequential(nn.Linear(pos_action_size*3, emb_size), nn.ReLU(),
+                                nn.Linear(emb_size, last_fc_dim), nn.ReLU())
+
+        # if pos_action_rnn:
+        #     self.rnn = nn.GRU(32, hidden_size, batch_first=True)
+
+        # self.pos_action_rnn = pos_action_rnn
+
+    def forward(self, inputs):
+        # B = inputs.shape[0]
+        # N = inputs.shape[-2]  # num_agents
+
+        # get embedded communication
+        emb = self.fc(inputs)  
+
+        # if self.pos_action_rnn:
+        #     _, hidden = self.rnn(emb)  # (1, B, hidden_size)
+        #     return hidden[-1]
+        # else:
+        # return emb.view(-1, 64)
+        return emb
 
 
 class InputProcessingModule(nn.Module):

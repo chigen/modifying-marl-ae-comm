@@ -98,6 +98,8 @@ class GridAgentInterface(GridAgent):
                 comm_act_space = comm_space[0]
                 comm_space = gym.spaces.Tuple(comm_space)
                 self.comm = np.zeros((comm_len,))
+                # add pos_and_action comm
+                self.traj_comm = np.zeros((comm_len,))
             else:
                 comm_space = gym.spaces.Box(low=0.0,
                                             high=comm_dim,
@@ -108,6 +110,8 @@ class GridAgentInterface(GridAgent):
                                                 shape=(comm_len,),
                                                 dtype=np.float32)
                 self.comm = np.zeros((comm_len,), dtype=np.float32)
+                # add pos_and_action comm
+                self.traj_comm = np.zeros((comm_len,), dtype=np.float32)
         else:
             self.observe_comm = False
 

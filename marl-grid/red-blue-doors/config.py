@@ -24,9 +24,10 @@ def get_env_cfg():
 
     config.num_agents = 2
     config.num_adversaries = 0
+    config.pos_and_action_len = 5
 
     config.max_steps = 2048
-    config.grid_size = 20
+    config.grid_size = 10
     config.observation_style = 'dict'
     config.observe_position = False
     config.observe_self_position = False
@@ -50,7 +51,8 @@ def get_env_cfg():
     config.num_blind_agents = 0
 
     # agent comm length
-    config.comm_len = 0
+    # config.comm_len = 0
+    config.comm_len = 10
 
     # if False, use continuous communication
     config.discrete_comm = False
@@ -72,7 +74,8 @@ def get_config(args, eval=False):
     config.env_cfg = get_env_cfg()
 
     config.run_dir = 'runs'
-    config.num_workers = 16
+    # config.num_workers = 16
+    config.num_workers = 8
     config.gpu = [int(g) for g in args.gpu]
 
     # the prefix to the log

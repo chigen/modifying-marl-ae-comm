@@ -48,7 +48,7 @@ def to_torch(x, use_gpu=True, dtype=np.float32):
     if isinstance(x, torch.Tensor):
         x_np = x.cpu().numpy()
     elif isinstance(x, (list, tuple)):
-        x_np = np.array([i.cpu().numpy() if isinstance(i, torch.Tensor) else i for i in x])
+        x_np = np.array([i.cpu().numpy() if isinstance(i, torch.Tensor) else i for i in x],dtype=dtype)
     else:
         x_np = x
     var = torch.from_numpy(x_np)

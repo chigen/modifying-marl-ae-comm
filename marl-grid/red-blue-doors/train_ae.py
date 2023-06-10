@@ -42,6 +42,7 @@ if __name__ == '__main__':
                                    act_space=env.action_space,
                                    num_agents=cfg.env_cfg.num_agents,
                                    comm_len=cfg.env_cfg.comm_len,
+                                   env=env,
                                    discrete_comm=cfg.env_cfg.discrete_comm,
                                    ae_pg=cfg.ae_pg,
                                    ae_type=cfg.ae_type,

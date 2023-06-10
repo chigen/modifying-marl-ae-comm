@@ -533,6 +533,18 @@ class MultiGridEnv(gym.Env):
 
         comm = np.stack(comm, axis=0)  # (num_agents, comm_len)
         return comm
+    
+    def gen_agent_traj_comm_obs(self, agent):
+        traj_comm = []
+        for a in self.agents:
+            if a == agent:
+                continue
+            else:
+                traj_comm.append(a.traj_comm)
+        traj_comm.append(agent.traj_comm)
+
+        traj_comm = np.stack(traj_comm, axis=0)  # (num_agents, comm_len)
+        return traj_comm
 
     def gen_agent_done_obs(self, agent):
         d = []
@@ -601,6 +613,7 @@ class MultiGridEnv(gym.Env):
                 ret['identity'] = agent.is_adversary
             if agent.observe_comm:
                 ret['comm'] = self.gen_agent_comm_obs(agent)
+                ret['traj_comm'] = self.gen_agent_traj_comm_obs(agent)
             return ret
         elif agent.observation_style == 'tuple':
             ret = (grid_image,)
@@ -633,6 +646,10 @@ class MultiGridEnv(gym.Env):
     def gen_obs(self, image_only=False):
         obs = [self.gen_agent_obs(agent, image_only) for agent in self.agents]
         return obs
+    
+    def get_pos(self):
+        poses = [self.get_agent_pos(agent) for agent in self.agents]
+        return poses
 
     def __str__(self):
         return self.grid.__str__()
@@ -677,10 +694,13 @@ class MultiGridEnv(gym.Env):
             agent.step_reward = 0
 
             if self.comm_dim > 0 and self.comm_len > 0:
-                assert len(action) == 2
+                # assert len(action) == 2
+                # now added traj_comm
+                assert len(action) == 3
                 assert len(action[1]) == self.comm_len
                 agent.env_act = action[0]
                 agent.comm = action[1]
+                agent.traj_comm = action[2]
                 action = agent.env_act
             else:
                 agent.env_act = action

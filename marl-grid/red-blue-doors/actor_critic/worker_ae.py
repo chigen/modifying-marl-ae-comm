@@ -39,7 +39,7 @@ class Worker(mp.Process):
     """
 
     def __init__(self, master, net, env, worker_id, gpu_id=0, t_max=20,
-                 gamma=0.99, tau=1.0, ae_loss_k=1.0):
+                 gamma=0.99, tau=1.0, ae_loss_k=1.0, pos_and_action_len=5):
         super().__init__()
 
         self.worker_id = worker_id
@@ -56,6 +56,8 @@ class Worker(mp.Process):
         self.agents = [f'agent_{i}' for i in range(self.env.num_agents)]
         self.num_acts = 1
         self.ae_loss_k = ae_loss_k
+        self.pos_and_action = [[] for i in range(self.env.num_agents)]
+        self.pos_and_action_len = pos_and_action_len
 
     @within_cuda_device
     def get_trajectory(self, hidden_state, state_var, done):
@@ -77,14 +79,16 @@ class Worker(mp.Process):
         trajectory = [[] for _ in range(self.num_acts)]
 
         while not check_done(done) and len(trajectory[0]) < self.t_max:
-            plogit, value, hidden_state, comm_out, comm_ae_loss = self.net(
-                state_var, hidden_state)
-            action, _, _, all_actions = self.net.take_action(plogit, comm_out)
+            plogit, value, hidden_state, comm_out, comm_ae_loss, traj_comm_out,\
+                 traj_comm_ae_loss = self.net(state_var, hidden_state)
+            action, _, _, all_actions = self.net.take_action(plogit, comm_out,
+                                                             traj_comm_out)
             state, reward, done, info = self.env.step(all_actions)
             state_var = ops.to_state_var(state)
 
             # assert self.num_acts == 1:
-            trajectory[0].append((plogit, action, value, reward, comm_ae_loss))
+            trajectory[0].append((plogit, action, value, reward, comm_ae_loss,
+                                   traj_comm_ae_loss))
 
         # end condition
         if check_done(done):
@@ -92,6 +96,7 @@ class Worker(mp.Process):
                 self.num_acts)]
         else:
             with torch.no_grad():
+                # this target_value is env_critic_out
                 target_value = self.net(state_var, hidden_state)[1]
                 if self.num_acts == 1:
                     target_value = [target_value]
@@ -145,6 +150,7 @@ class Worker(mp.Process):
             all_els = [[] for _ in range(self.num_acts)]
 
             comm_ae_losses = []
+            traj_comm_ae_losses = []
 
             # compute loss for each action
             loss = 0
@@ -161,9 +167,10 @@ class Worker(mp.Process):
                     t_value = tar_val[agent]
 
                     pls, vls, els = [], [], []
-                    for i, (pi_logit, action, value, reward, comm_ae_loss
-                            ) in enumerate(traj):
+                    for i, (pi_logit, action, value, reward, comm_ae_loss, 
+                            traj_comm_ae_loss) in enumerate(traj):
                         comm_ae_losses.append(comm_ae_loss.item())
+                        traj_comm_ae_losses.append(traj_comm_ae_loss.item())
 
                         # Agent A3C Loss
                         t_value = reward[agent] + self.gamma * t_value
@@ -175,6 +182,7 @@ class Worker(mp.Process):
                                   val[agent][i + 1].data
                         gae = gae * self.gamma * self.tau + delta_t
 
+                        # return loss, (policy_loss, value_loss, entropy)
                         tl, (pl, vl, el) = policy_gradient_loss(
                             pi_logit[agent], action[agent], advantage, gae=gae)
 
@@ -183,7 +191,9 @@ class Worker(mp.Process):
                         els.append(ops.to_numpy(el))
 
                         reward_log += reward[agent]
-                        loss += (tl + comm_ae_loss * self.ae_loss_k)
+                        # TODO: maybe need to modify this later
+                        loss += (tl + comm_ae_loss * self.ae_loss_k + 
+                                 traj_comm_ae_loss * self.ae_loss_k)
 
                     all_pls[aid].append(np.mean(pls))
                     all_vls[aid].append(np.mean(vls))
@@ -207,6 +217,7 @@ class Worker(mp.Process):
                     log_dict[f'value_loss/{act}'] = np.mean(all_vls[act_id])
                     log_dict[f'entropy/{act}'] = np.mean(all_els[act_id])
                 log_dict['ae_loss'] = np.mean(comm_ae_losses)
+                log_dict['traj_ae_loss'] = np.mean(traj_comm_ae_losses)
 
                 for k, v in log_dict.items():
                     self.master.writer.add_scalar(k, v, weight_iter)
