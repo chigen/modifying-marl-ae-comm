@@ -22,6 +22,25 @@ from model.ae import AENetwork
 from util.shared_opt import SharedAdam
 
 if __name__ == '__main__':
+    # NOTE traffic junction's map will look like:
+    '''
+    0 1 2 3 4 5 6 7 8 9 10
+    # # # # D D D # # # #
+    # # # # # A # # # # #
+    # # # # # . # # # # #
+    # # # # # . # # # # #
+    D # # # . . . # # # D
+    D A . . . . . . . A D
+    D # # # . . . # # # D
+    # # # # # . # # # # #
+    # # # # # . # # # # #
+    # # # # # A # # # # #
+    # # # # D D D # # # #
+    
+    #: wall, .: road, A: possible positions for agents, 
+    D: possible positions for doors
+    '''
+
     # (0) args and steps to make this work.
     # Disable the python spawned processes from using multiple threads.
     print(torch.multiprocessing.get_start_method())

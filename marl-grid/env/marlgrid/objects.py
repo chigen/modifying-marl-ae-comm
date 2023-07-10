@@ -163,6 +163,7 @@ class GridAgent(WorldObj):
         return self._can_overlap
 
     def render(self, img):
+        # neutral_shape = true
         if self.neutral_shape:
             shape_fn = point_in_circle(0.5, 0.5, 0.31)
         else:

@@ -379,6 +379,7 @@ class MultiGridEnv(gym.Env):
         active_after_done = config.get('active_after_done')
         discrete_position = config.get('discrete_position')
         separate_rew_more = config.get('separate_rew_more')
+        collision_penalty = config.get('collision_penalty')
 
         self.debug = config.get('debug', False)
 
@@ -389,6 +390,7 @@ class MultiGridEnv(gym.Env):
 
         self.window = None
 
+        # width = height = 10
         self.width = width
         self.height = height
         self.max_steps = max_steps
@@ -402,6 +404,7 @@ class MultiGridEnv(gym.Env):
         self.max_dis = np.sqrt(np.sum(np.square([self.width, self.height])))
         self.discrete_position = discrete_position
         self.separate_rew_more = separate_rew_more
+        self.collision_penalty = collision_penalty
 
         self.agents = []
 
@@ -496,6 +499,7 @@ class MultiGridEnv(gym.Env):
 
         if agent.see_through_walls:
             # return view without rotation
+            # self.grid = MultiGrid((width, height))
             grid = self.grid.slice(topX, topY, agent.view_size, agent.view_size)
         else:
             grid = self.grid.slice(topX, topY, agent.view_size, agent.view_size,
@@ -669,6 +673,7 @@ class MultiGridEnv(gym.Env):
                 '__all__' (required) is used to indicate env termination.
             infos (dict): Optional info values for each agent id.
         """
+        # TODO add collision check and give penalty reward in step function
         # Spawn agents if it's time.
         for agent in self.agents:
             if not agent.active and not agent.done and \
@@ -931,6 +936,7 @@ class MultiGridEnv(gym.Env):
                     highlight_mask[xlow + dxlow:xhigh - dxhigh,
                     ylow + dylow:yhigh - dyhigh] = True
                 else:
+                    # grid, vis_mask = self.gen_obs_grid(agent)
                     a, b = self.gen_obs_grid(agent)
                     highlight_mask[xlow + dxlow:xhigh - dxhigh,
                     ylow + dylow:yhigh - dyhigh] |= (

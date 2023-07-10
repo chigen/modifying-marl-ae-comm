@@ -67,6 +67,8 @@ class RedBlueDoorsMultiGrid(MultiGridEnv):
             'door_obs': door_obs,
             'comm_act': np.stack([a.comm for a in self.agents],
                                  axis=0),  # (N, comm_len)
+            'traj_comm_act': np.stack([a.traj_comm for a in self.agents],
+                                axis=0),  # (N, comm_len)
             'env_act': np.stack([a.env_act for a in self.agents],
                                 axis=0),  # (N, 1)
         }
