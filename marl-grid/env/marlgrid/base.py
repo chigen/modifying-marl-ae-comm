@@ -688,6 +688,11 @@ class MultiGridEnv(gym.Env):
 
         comm_rewards = np.zeros((len(self.agents, )), dtype=np.float)
         comm_strs = ['' for _ in range(self.num_agents)]
+        
+        opened_doors = {}
+        if self.collision_penalty<0:
+            # ['red', 'blue', 'purple', 'orange']
+            opened_doors = {'red':0, 'blue':0, 'purple':0, 'orange':0}
 
         self.step_count += 1
 
@@ -731,6 +736,11 @@ class MultiGridEnv(gym.Env):
                             self.grid.set(*fwd_pos, agent)
                             agent.pos = fwd_pos
                         else:
+                            # collision here
+                            if self.collision_penalty<0:
+                                # maybe not need update agent.step_reward
+                                # agent.step_reward += self.collision_penalty
+                                step_rewards[agent_no] += self.collision_penalty
                             fwd_cell.agents.append(agent)
                             agent.pos = fwd_pos
 
@@ -753,6 +763,7 @@ class MultiGridEnv(gym.Env):
 
                         # After moving, the agent shouldn't
                         # contain any other agents.
+                        # TODO check agent.agents
                         agent.agents = []
 
                         # agent can only receive rewards if fwd_cell has a
@@ -788,9 +799,15 @@ class MultiGridEnv(gym.Env):
                         pass
 
                 # Toggle/activate an object
+                # NOTE -1 means opended wrongly, 1 means opened correctly
                 elif action == agent.actions.toggle:
                     if fwd_cell:
                         fwd_cell.toggle(agent, fwd_pos)
+                        if self.collision_penalty and fwd_cell.state == 1:
+                            if fwd_cell.color == agent.color:
+                                opened_doors[fwd_cell.color] = 1
+                            else:
+                                opened_doors[fwd_cell.color] = -1
                     else:
                         pass
 
@@ -801,7 +818,7 @@ class MultiGridEnv(gym.Env):
                 else:
                     raise ValueError(
                         f'Environment cannot handle action {action}.')
-
+                # NOTE need to find out what is prestige and on_step
                 agent.on_step(fwd_cell if agent_moved else None)
 
         # If any of the agents individually are "done" (hit Goal)
@@ -835,8 +852,10 @@ class MultiGridEnv(gym.Env):
 
         obs = self.gen_obs()
         obs_dict = {f'agent_{i}': obs[i] for i in range(len(obs))}
-
+        # change here, use info to convey the info if the door is opened correctly
         info_dict = {'comm_strs': comm_strs}
+        if self.collision_penalty<0:
+            info_dict = {**info_dict, **opened_doors}
 
         return obs_dict, rew_dict, {}, info_dict
 

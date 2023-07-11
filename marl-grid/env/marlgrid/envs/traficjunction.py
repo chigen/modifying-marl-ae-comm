@@ -23,6 +23,7 @@ class TrafficJunctionMultiGrid(MultiGridEnv):
         height = self.size
         # aligned with agents' colors
         self.colors = ['red', 'blue', 'purple', 'orange']
+        self.colors_to_idx = {'red': 0, 'blue': 1, 'purple': 2, 'orange': 3}
 
         super(TrafficJunctionMultiGrid, self).__init__(config, width, height)
 
@@ -129,35 +130,50 @@ class TrafficJunctionMultiGrid(MultiGridEnv):
         return obs_dict
 
     def step(self, action_dict):
+        """
+        any agent opens one door, the agent gets reward
+        if there is a collision between agents, there will be a penalty
+        done when all the doors are opened, 
+        or doors are opened by different color's agent
+        """
+    
+        obs_dict, step_rewards, _, info_dict = MultiGridEnv.step(self, action_dict)
 
-        red_door_opened_before = self.red_door.is_open()
-        blue_door_opened_before = self.blue_door.is_open()
-
-        obs_dict, _, _, info_dict = MultiGridEnv.step(self, action_dict)
-
-        step_rewards = np.zeros((self.num_agents, ), dtype=np.float)
-
-        red_door_opened_after = self.red_door.is_open()
-        blue_door_opened_after = self.blue_door.is_open()
-
-        if not red_door_opened_before and red_door_opened_after:
-            red_door_opened_now = True
-        else:
-            red_door_opened_now = False
-
+        # step_rewards = np.zeros((self.num_agents, ), dtype=np.float)
         done = False
-        success = False
-        if blue_door_opened_after:
-            if red_door_opened_before:
-                step_rewards += self._reward()
-                success = True
-                done = True
-            else:
-                done = True
+        success = True
+        assert self.collision_penalty<0
+        for k,v in info_dict.items():
+            if k in self.colors:
+                if v == -1:
+                    done = True
+                    success = False
+                elif v == 1:
+                    step_rewards[self.colors_to_idx[k]] += self._reward()
+                else:
+                    # some door is not opened
+                    success = False
+        if success:
+            done = True
+        
+        # if not red_door_opened_before and red_door_opened_after:
+        #     red_door_opened_now = True
+        # else:
+        #     red_door_opened_now = False
 
-        elif red_door_opened_after:
-            if blue_door_opened_before:
-                done = True
+        # done = False
+        # success = False
+        # if blue_door_opened_after:
+        #     if red_door_opened_before:
+        #         step_rewards += self._reward()
+        #         success = True
+        #         done = True
+        #     else:
+        #         done = True
+
+        # elif red_door_opened_after:
+        #     if blue_door_opened_before:
+        #         done = True
 
         timeout = (self.step_count >= self.max_steps)
 
@@ -172,6 +188,6 @@ class TrafficJunctionMultiGrid(MultiGridEnv):
             'comm': obs_dict['global']['comm_act'].tolist(),
             'env_act': obs_dict['global']['env_act'].tolist(),
             't': self.step_count,
-            'red_door_opened_now': red_door_opened_now,
+            # 'red_door_opened_now': red_door_opened_now,
         }
         return obs_dict, rew_dict, done_dict, info_dict
