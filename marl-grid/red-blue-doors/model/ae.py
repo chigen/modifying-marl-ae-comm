@@ -353,7 +353,7 @@ class AENetwork(A3CTemplate):
         self.num_agents = num_agents
         self.env = env
         self.pos_and_action_len = pos_and_action_len
-        print('pos_and_action_len:', pos_and_action_len)
+        # print('pos_and_action_len:', pos_and_action_len)
         self.comm_len = comm_len
 
         self.comm_ae = EncoderDecoder(obs_space, comm_len, discrete_comm,

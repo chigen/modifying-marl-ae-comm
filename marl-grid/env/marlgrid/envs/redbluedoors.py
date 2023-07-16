@@ -34,42 +34,42 @@ class RedBlueDoorsMultiGrid(MultiGridEnv):
         doors = [self.red_door, self.blue_door]
         self.np_random.shuffle(doors)
 
-        # # Add a red/blue door at a random position in the left wall
-        # pos = self.np_random.randint(1, self.size - 1)
-        # self.grid.set(0, pos, doors[0])
-        # doors[0].pos = np.asarray([0, pos])
+        # Add a red/blue door at a random position in the left wall
+        pos = self.np_random.randint(1, self.size - 1)
+        self.grid.set(0, pos, doors[0])
+        doors[0].pos = np.asarray([0, pos])
 
-        # # Add a red/blue door at a random position in the right wall
-        # pos = self.np_random.randint(1, self.width - 1)
-        # self.grid.set(self.width - 1, pos, doors[1])
-        # doors[1].pos = np.asarray([self.width - 1, pos])
+        # Add a red/blue door at a random position in the right wall
+        pos = self.np_random.randint(1, self.width - 1)
+        self.grid.set(self.width - 1, pos, doors[1])
+        doors[1].pos = np.asarray([self.width - 1, pos])
 
                 # Add doors at different and random positions in different walls
-        walls = []
-        for i in range(2):
-            wall = self.np_random.randint(0, 4)
-            while wall in walls:
-                wall = self.np_random.randint(0, 4)
-            walls.append(wall)
+        # walls = []
+        # for i in range(2):
+        #     wall = self.np_random.randint(0, 4)
+        #     while wall in walls:
+        #         wall = self.np_random.randint(0, 4)
+        #     walls.append(wall)
         
-        for i in range(2):
-            pos = self.np_random.randint(1, self.size - 1)
-            wall = walls[i]
-            if wall == 0:
-                self.grid.set(0, pos, doors[i])
-                doors[i].pos = np.asarray([0, pos])
-            elif wall == 1:
-                self.grid.set(pos, 0, doors[i])
-                doors[i].pos = np.asarray([pos, 0])
-            elif wall == 2:
-                self.grid.set(self.width - 1, pos, doors[i])
-                doors[i].pos = np.asarray([self.width - 1, pos])
-            elif wall == 3:
-                self.grid.set(pos, self.height - 1, doors[i])
-                doors[i].pos = np.asarray([pos, self.height - 1])
+        # for i in range(2):
+        #     pos = self.np_random.randint(1, self.size - 1)
+        #     wall = walls[i]
+        #     if wall == 0:
+        #         self.grid.set(0, pos, doors[i])
+        #         doors[i].pos = np.asarray([0, pos])
+        #     elif wall == 1:
+        #         self.grid.set(pos, 0, doors[i])
+        #         doors[i].pos = np.asarray([pos, 0])
+        #     elif wall == 2:
+        #         self.grid.set(self.width - 1, pos, doors[i])
+        #         doors[i].pos = np.asarray([self.width - 1, pos])
+        #     elif wall == 3:
+        #         self.grid.set(pos, self.height - 1, doors[i])
+        #         doors[i].pos = np.asarray([pos, self.height - 1])
 
         # NOTE debug output
-        print('red door pos:', doors[0].pos, ' blue door pos:', doors[1].pos)
+        # print('red door pos:', doors[0].pos, ' blue door pos:', doors[1].pos)
 
         return None
 
@@ -147,7 +147,7 @@ class RedBlueDoorsMultiGrid(MultiGridEnv):
             'timeout': timeout,
             'success': success,
             'comm': obs_dict['global']['comm_act'].tolist(),
-            'traj_comm_act': obs_dict['global']['traj_comm_act'].tolist(),
+            'traj_comm': obs_dict['global']['traj_comm_act'].tolist(),
             'env_act': obs_dict['global']['env_act'].tolist(),
             't': self.step_count,
             'red_door_opened_now': red_door_opened_now,
