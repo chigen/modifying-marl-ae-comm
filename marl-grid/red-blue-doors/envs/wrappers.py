@@ -76,6 +76,11 @@ class GridWorldEvaluatorWrapper(gym.Wrapper):
             for k in range(len(info_dict['comm'])):
                 to_render += [f'a{k}: ' + str(info_dict['comm'][k])]
 
+            # render trajectory communication
+            to_render += ['traj_comm']
+            for k in range(len(info_dict['traj_comm'])):
+                to_render += [f'a{k}: ' + str(info_dict['traj_comm'][k])]
+
             # render env action
             to_render += ['act']
             for k in range(len(info_dict['env_act'])):

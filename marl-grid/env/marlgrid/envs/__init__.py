@@ -5,6 +5,7 @@ from gym.envs.registration import register as gym_register
 
 from .findgoal import FindGoalMultiGrid
 from .redbluedoors import RedBlueDoorsMultiGrid
+from .traficjunction import TrafficJunctionMultiGrid
 from ..agents import GridAgentInterface
 from ..base import MultiGridEnv
 
@@ -201,6 +202,11 @@ def register_env(
         restrict_actions = True
     elif env_type == 'd':
         env_class = RedBlueDoorsMultiGrid
+        assert n_agents == 2
+        assert n_adversaries == 0
+        restrict_actions = False
+    elif env_type == 't':
+        env_class = TrafficJunctionMultiGrid
         assert n_agents == 2
         assert n_adversaries == 0
         restrict_actions = False

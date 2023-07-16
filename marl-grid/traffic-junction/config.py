@@ -20,7 +20,7 @@ def get_env_cfg():
 
     config.seed = 1
 
-    config.env_type = 'd'
+    config.env_type = 't'
 
     config.num_agents = 2
     config.num_adversaries = 0

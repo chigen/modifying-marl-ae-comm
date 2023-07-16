@@ -111,6 +111,7 @@ class Evaluator(mp.Process):
                         t_red_door = info['t']
 
                     if hasattr(env_copy, 'get_raw_obs'):
+                        # get_raw_obs() is in wrappers.py GridWorldEvaluatorWrapper
                         frame = env_copy.get_raw_obs()
                         frame = frame[None, ...]
                     else:

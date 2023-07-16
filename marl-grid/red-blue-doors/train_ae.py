@@ -87,16 +87,16 @@ if __name__ == '__main__':
     # (4) create a separate process to dump latest result (optional)
     eval_gpu_id = cfg.gpu[-1]
 
-    # with torch.cuda.device(eval_gpu_id):
-    #     evaluator = Evaluator(master, create_net().cuda(), create_env(),
-    #                           save_dir_fmt=save_dir_fmt,
-    #                           gpu_id=eval_gpu_id,
-    #                           sleep_duration=10,
-    #                           video_save_freq=cfg.video_save_freq,
-    #                           ckpt_save_freq=cfg.ckpt_save_freq,
-    #                           num_eval_episodes=cfg.num_eval_episodes,
-    #                           net_type='ae')
-    #     workers.append(evaluator)
+    with torch.cuda.device(eval_gpu_id):
+        evaluator = Evaluator(master, create_net().cuda(), create_env(),
+                              save_dir_fmt=save_dir_fmt,
+                              gpu_id=eval_gpu_id,
+                              sleep_duration=10,
+                              video_save_freq=cfg.video_save_freq,
+                              ckpt_save_freq=cfg.ckpt_save_freq,
+                              num_eval_episodes=cfg.num_eval_episodes,
+                              net_type='ae')
+        workers.append(evaluator)
 
     # (5) start training
 

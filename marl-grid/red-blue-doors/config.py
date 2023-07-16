@@ -39,7 +39,7 @@ def get_env_cfg():
     config.active_after_done = False
 
     # add collision penalty
-    config.collision_penalty = -0.5
+    config.collision_penalty = 0
 
     # allow agents to observe door state and pos
     config.observe_door = False

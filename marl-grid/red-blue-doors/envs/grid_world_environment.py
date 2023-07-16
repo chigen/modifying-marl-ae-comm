@@ -45,6 +45,7 @@ def create_grid_world_env(env_cfg):
             'seed': env_cfg.seed,
             'active_after_done': env_cfg.active_after_done,
             'discrete_position': env_cfg.discrete_position,
+            'collision_penalty': env_cfg.collision_penalty,
         },
         env_type=env_cfg.env_type)
 

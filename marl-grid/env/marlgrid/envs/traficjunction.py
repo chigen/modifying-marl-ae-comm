@@ -70,16 +70,16 @@ class TrafficJunctionMultiGrid(MultiGridEnv):
             wall = walls[i]
             if wall == 0:
                 self.grid.set(0, pos, doors[i])
-                doors[0].pos = np.asarray([0, pos])
+                doors[i].pos = np.asarray([0, pos])
             elif wall == 1:
                 self.grid.set(pos, 0, doors[i])
-                doors[0].pos = np.asarray([pos, 0])
+                doors[i].pos = np.asarray([pos, 0])
             elif wall == 2:
                 self.grid.set(self.width - 1, pos, doors[i])
-                doors[0].pos = np.asarray([self.width - 1, pos])
+                doors[i].pos = np.asarray([self.width - 1, pos])
             elif wall == 3:
                 self.grid.set(pos, self.height - 1, doors[i])
-                doors[0].pos = np.asarray([pos, self.height - 1])
+                doors[i].pos = np.asarray([pos, self.height - 1])
         
         # # Add a red/blue door at a random position in the left wall
         # pos = self.np_random.randint(1, self.size - 1)

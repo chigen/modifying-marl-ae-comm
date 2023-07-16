@@ -321,11 +321,15 @@ class OtherModeling(nn.Module):
         )
     
     def forward(self, other_acts, obs, act):
+        act = act.cuda()
+        act = torch.unsqueeze(act, 0)
         # TODO: check the dim here
         f_obs_feat = self.f_obs(obs)
+        # shape ([1, 64])
         f_oacts_feat = self.f_oacts(other_acts)
-        fo_feat = torch.cat((f_obs_feat, f_oacts_feat, act), dim=0)
-        policy = F.softmax(self.fo(fo_feat), dim=0)
+        fo_feat = torch.cat((f_obs_feat, f_oacts_feat, act), dim=1)
+        policy = F.softmax(self.fo(fo_feat)[0], dim=0)
+        policy = ops.to_numpy(policy)
 
         action = np.random.choice(self.num_actions, p=policy)
         # est_diff = self.fo(decodeds)
@@ -337,7 +341,7 @@ class AENetwork(A3CTemplate):
     An network with AE comm.
     """
     def __init__(self, obs_space, act_space, num_agents, comm_len, env,
-                 discrete_comm, pos_and_action_len=10, ae_pg=0, ae_type='', hidden_size=256,
+                 discrete_comm, pos_and_action_len=5, ae_pg=0, ae_type='', hidden_size=256,
                  img_feat_dim=64):
         super().__init__()
 
@@ -349,6 +353,7 @@ class AENetwork(A3CTemplate):
         self.num_agents = num_agents
         self.env = env
         self.pos_and_action_len = pos_and_action_len
+        print('pos_and_action_len:', pos_and_action_len)
         self.comm_len = comm_len
 
         self.comm_ae = EncoderDecoder(obs_space, comm_len, discrete_comm,
@@ -386,9 +391,9 @@ class AENetwork(A3CTemplate):
 
         # individual memories
         # LSTM now will input: [img_encoded_feat, ae_comm_out, traj_comm_out]
-        self.feat_dim = self.input_processor.feat_dim + 2*comm_len
+        self.head_feat_dim = self.input_processor.feat_dim + 2*comm_len
         self.head = nn.ModuleList(
-            [LSTMhead(self.feat_dim, hidden_size, num_layers=1
+            [LSTMhead(self.head_feat_dim, hidden_size, num_layers=1
                       ) for _ in range(num_agents)])
         self.is_recurrent = True
 
@@ -485,12 +490,13 @@ class AENetwork(A3CTemplate):
     def other_modeling_processor(self, traj_comm_out, inputs, act, agent_id):
         """ traj_comm_out: (num_agents, comm_len * 3) """
         with torch.no_grad():
-            decodeds = torch.empty((0, self.comm_len))
+            decodeds = torch.empty((0, self.feat_dim))
             decodeds = decodeds.cuda()
             for i in range(self.num_agents):
                 if i==agent_id:
                     continue
-                decodeds = torch.cat((decodeds, self.comm_tj.decode(traj_comm_out[i])), dim=0)
+                traj_out = torch.unsqueeze(self.comm_tj.decode(traj_comm_out[i]), 0) 
+                decodeds = torch.cat((decodeds, traj_out), dim=0)
             # detach the decodeds
             state = self.input_processor(inputs)[agent_id]
         return decodeds, state, act

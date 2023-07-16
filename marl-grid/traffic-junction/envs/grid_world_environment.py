@@ -55,8 +55,8 @@ def get_env_name(env_cfg):
     """
     Automatically generate env name from env configs.
     """
-    assert env_cfg.env_type == 'd'
-    name = f'MarlGridDoors-'
+    assert env_cfg.env_type == 't'
+    name = f'MarlGridTraffic-'
 
     if env_cfg.num_blind_agents > 0:
         name += f'{env_cfg.num_blind_agents}Blind'
