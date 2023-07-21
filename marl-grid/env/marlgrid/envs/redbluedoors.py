@@ -20,7 +20,7 @@ class RedBlueDoorsMultiGrid(MultiGridEnv):
 
         super(RedBlueDoorsMultiGrid, self).__init__(config, width, height)
 
-    def _gen_grid(self, width, height):
+    def _gen_grid(self, width, height, purple=True):
         """Generate grid without agents."""
 
         # Create an empty grid
@@ -31,6 +31,15 @@ class RedBlueDoorsMultiGrid(MultiGridEnv):
 
         self.red_door = FreeDoor(color='red', state=FreeDoor.states.closed)
         self.blue_door = FreeDoor(color='blue', state=FreeDoor.states.closed)
+        
+        if purple:
+            # NOTE add a purple door at the bottom wall
+            # the agent which opened the purple door will get a +2 reward,
+            # other agents will get a +1 reward
+            self.purple_door = FreeDoor(color='purple', state=FreeDoor.states.closed)
+            pos = self.np_random.randint(1, self.width - 1)
+            self.grid.set(pos, self.height - 1, self.purple_door)
+            self.purple_door.pos = np.asarray([pos, self.height - 1])
         doors = [self.red_door, self.blue_door]
         self.np_random.shuffle(doors)
 
@@ -110,9 +119,9 @@ class RedBlueDoorsMultiGrid(MultiGridEnv):
         red_door_opened_before = self.red_door.is_open()
         blue_door_opened_before = self.blue_door.is_open()
 
-        obs_dict, _, _, info_dict = MultiGridEnv.step(self, action_dict)
-
+        obs_dict, rew_dict, _, info_dict = MultiGridEnv.step(self, action_dict)
         step_rewards = np.zeros((self.num_agents, ), dtype=np.float)
+        step_rewards = rew_dict['step_rewards']
 
         red_door_opened_after = self.red_door.is_open()
         blue_door_opened_after = self.blue_door.is_open()
@@ -130,14 +139,18 @@ class RedBlueDoorsMultiGrid(MultiGridEnv):
                 success = True
                 done = True
             else:
+                # opened blue door before red door
+                # step_rewards -= 1.
                 done = True
 
         elif red_door_opened_after:
             if blue_door_opened_before:
+                # opened blue door before red door
+                # step_rewards -= 1.
                 done = True
 
         timeout = (self.step_count >= self.max_steps)
-
+        # global does not update
         obs_dict['global'] = self.gen_global_obs()
         rew_dict = {f'agent_{i}': step_rewards[i] for i in range(
             len(step_rewards))}
@@ -146,6 +159,7 @@ class RedBlueDoorsMultiGrid(MultiGridEnv):
             'done': done,
             'timeout': timeout,
             'success': success,
+            # comm
             'comm': obs_dict['global']['comm_act'].tolist(),
             'traj_comm': obs_dict['global']['traj_comm_act'].tolist(),
             'env_act': obs_dict['global']['env_act'].tolist(),

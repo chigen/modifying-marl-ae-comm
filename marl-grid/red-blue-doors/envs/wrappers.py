@@ -39,7 +39,10 @@ class GridWorldEvaluatorWrapper(gym.Wrapper):
         return
 
     def get_raw_obs(self):
+        # shape: (320, 512, 3)
         frame = self.env.render(mode='rgb_array', show_more=self.show_reward)
+        # frame = self.env.render(mode='human', show_more=self.show_reward)
+        # shape: (640, 1024, 3)
         frame = frame.astype(np.uint8)
         frame = self.resize(frame)
         obs, rew, _, info = self._out

@@ -658,7 +658,7 @@ class MultiGridEnv(gym.Env):
     def __str__(self):
         return self.grid.__str__()
 
-    def step(self, action_dict):
+    def step(self, action_dict, purple=True):
         """Returns observations from ready agents.
 
         The returns are dicts mapping from agent_id strings to values. The
@@ -802,7 +802,14 @@ class MultiGridEnv(gym.Env):
                 # NOTE -1 means opended wrongly, 1 means opened correctly
                 elif action == agent.actions.toggle:
                     if fwd_cell:
+                        if purple:
+                            # the agent which opened the purple door, get +2 reward
+                            if fwd_cell.color == 'purple' and not fwd_cell.is_open():
+                                step_rewards += 1.
+                                step_rewards[agent_no] += 1.
+
                         fwd_cell.toggle(agent, fwd_pos)
+                        
                         if self.collision_penalty and fwd_cell.state == 1:
                             if fwd_cell.color == agent.color:
                                 opened_doors[fwd_cell.color] = 1
@@ -965,6 +972,7 @@ class MultiGridEnv(gym.Env):
                     )
 
         # Render the whole grid
+        # shape (320, 320, 3), not including texts pixels
         img = self.grid.render(
             tile_size, highlight_mask=highlight_mask if highlight else None
         )
@@ -996,7 +1004,7 @@ class MultiGridEnv(gym.Env):
                 if show_more:
                     col = np.full((img.shape[0],
                                    2 * target_partial_width +
-                                   4 * agent_col_padding_px,
+                                   4 * agent_col_padding_px + 192,
                                    3),
                                   pad_grey, dtype=np.uint8)
                 else:
@@ -1012,7 +1020,7 @@ class MultiGridEnv(gym.Env):
                     offset[0]:offset[0] + view.shape[0],
                     offset[1]:offset[1] + view.shape[1], :] = view
                 cols.append(col)
-
+            # cols's shape: (320, 192, 3)
             img = np.concatenate((img, *cols), axis=1)
 
         if mode == 'human':

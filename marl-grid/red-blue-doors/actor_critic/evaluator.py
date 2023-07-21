@@ -93,7 +93,7 @@ class Evaluator(mp.Process):
                 while not check_done(done):
                     if self.net_type == 'ae':
                         plogit, _, hidden_state, comm_out, _, traj_comm_out, _ = \
-                                                self.net(state_var, hidden_state)
+                                                self.net(state_var, env_copy, hidden_state)
                         _, _, ent, action = self.net.take_action(plogit,
                                                         comm_out, traj_comm_out)
                     else:

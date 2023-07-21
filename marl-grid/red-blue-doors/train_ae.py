@@ -33,6 +33,7 @@ if __name__ == '__main__':
 
     save_dir_fmt = osp.join(f'./{cfg.run_dir}', cfg.exp_name + '/{}_ae')
     print('>> {}'.format(cfg.exp_name))
+    print(' ')
 
     # (1) create environment
     create_env = lambda: make_environment(cfg.env_cfg)
@@ -105,6 +106,8 @@ if __name__ == '__main__':
 
     # > join when done
     [w.join() for w in workers]
+
+    print('om2, purple door, diff reward, 0 reward when fail')
 
     master.save_ckpt(cfg.train_iter,
                      osp.join(save_dir_fmt.format('ckpt'), 'latest.pth'))

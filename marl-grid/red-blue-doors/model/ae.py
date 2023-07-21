@@ -297,6 +297,68 @@ class EncoderDecoder(nn.Module):
         else:
             raise NotImplementedError
 
+class OtherModeling1(nn.Module):
+    def __init__(self, decoder_space, env, img_feat_dim=64, num_actions=6, traj_len=5, use_precessor=True) -> None:
+        super(OtherModeling1, self).__init__()
+        # this other modeling input other agents' decoded traj_comm (preprocessed or not)
+        # and the current agent's own state
+        # output a sequnce of actions
+        # in this case, the other modeling part contains the generating traj function
+        # NOTE: maybe add sum of step rewards info at the end of the traj_comm
+        self.decoder_space = decoder_space
+        self.num_actions = num_actions
+        self.traj_len = traj_len
+        self.env = copy.deepcopy(env)
+        
+        self.other_comm_processor = nn.Sequential(
+            nn.Linear(decoder_space, 64),
+            nn.ReLU(),
+            nn.Linear(64, 32),
+            nn.ReLU(),
+        )
+        self.self_state_processor = nn.Sequential(
+            nn.Linear(img_feat_dim, 32),
+            nn.ReLU(),
+        )
+        self.other_modeling = nn.Sequential(
+            nn.Linear(64, 64),
+            nn.ReLU(),
+            # NOTE: if not use LSTM
+            nn.Linear(64, num_actions*traj_len),
+        )
+        # [LSTMhead(self.head_feat_dim, hidden_size, num_layers=1
+        #   ) for _ in range(num_agents)])
+        self.traj_head = LSTMhead(in_dim=64, out_dim=num_actions, num_layers=1)
+    
+    def forward(self, other_comm, state_processed):
+        other_comm_feat = self.other_comm_processor(other_comm)
+        self_state_feat = self.self_state_processor(state_processed)
+        self_state_feat = torch.unsqueeze(self_state_feat, 0)
+        cat_feat = torch.cat((other_comm_feat, self_state_feat), dim=1)
+        # NOTE: if not use LSTM
+        acts = self.other_modeling(cat_feat)
+        acts = acts.view(self.traj_len, self.num_actions)
+        acts_np = []
+        for i in range(self.traj_len):
+            act = F.softmax(acts[i], dim=0)
+            act = ops.to_numpy(act)
+            act = np.random.choice(self.num_actions, p=act)
+            acts_np.append(act)
+        # interate the env in main net
+        return acts_np
+
+        # cat_feat = self.other_modeling(cat_feat)
+        # # init LSTM
+        # hidden_state = self.traj_head.init_hidden()
+        # # generate traj_len's traj, using the traj_head
+        # acts = []
+        # for i in range(self.traj_len):
+        #     act_p, hidden_state = self.traj_head(cat_feat, hidden_state)
+        #     act_p = F.softmax(act_p[0], dim=0)
+        #     act_p = ops.to_numpy(act_p)
+        #     act = np.random.choice(self.num_actions, p=act_p)
+        #     acts.append(act)
+
 class OtherModeling(nn.Module):
     def __init__(self, decoder_space, img_feat_dim=64, num_actions=6):
         super(OtherModeling, self).__init__()
@@ -387,7 +449,11 @@ class AENetwork(A3CTemplate):
         # NOTE maybe a problem here
         self.om_input_size = self.feat_dim * (self.num_agents-1)
         # def __init__(self, decoder_space, img_feat_dim=64, num_actions=6):
-        self.other_modeling = OtherModeling(self.om_input_size)
+        # NOTE changed other modeling to other modeling 1
+        # self.other_modeling = OtherModeling(self.om_input_size)
+        self.other_modeling = nn.ModuleList([
+            OtherModeling1(self.om_input_size, env, img_feat_dim=img_feat_dim)
+            for _ in range(num_agents)])
 
         # individual memories
         # LSTM now will input: [img_encoded_feat, ae_comm_out, traj_comm_out]
@@ -451,8 +517,8 @@ class AENetwork(A3CTemplate):
         temp_env = copy.deepcopy(self.env)
         agents = temp_env.agents
         for i in range(self.num_agents):
-            comm_out = torch.cat((comm_out, inputs[f'agent_{i}']['comm'][:-1]),dim=0)
-            traj_comm_out = torch.cat((traj_comm_out, inputs[f'agent_{i}']['traj_comm'][:-1]),dim=0)
+            comm_out = torch.cat((comm_out, inputs[f'agent_{i}']['comm'][-1]),dim=0)
+            traj_comm_out = torch.cat((traj_comm_out, inputs[f'agent_{i}']['traj_comm'][-1]),dim=0)
             # comm_out.append(inputs[f'agent_{i}']['comm'][:-1])
             # traj_comm_out.append(inputs[f'agent_{i}']['traj_comm'][:-1])
         for j in range(self.pos_and_action_len):
@@ -545,9 +611,12 @@ class AENetwork(A3CTemplate):
 
         return env_actor_out, env_critic_out, hidden_state
 
-    def forward(self, inputs, hidden_state=None, env_mask_idx=None):
+    # NOTE: need to update env every time
+    def forward(self, inputs, env, hidden_state=None, env_mask_idx=None):
         assert type(inputs) is dict
         assert len(inputs.keys()) == self.num_agents + 1  # agents + global
+
+        self.env = copy.deepcopy(env)
 
         # WARNING: the following code only works for Python 3.6 and beyond
 
@@ -565,10 +634,12 @@ class AENetwork(A3CTemplate):
         # self.comm = np.zeros((comm_len,), dtype=np.float32)
         # TODO: make traj comm's init part
         comm_feat = []
+        traj_cf_list = []
         for i in range(self.num_agents):
-            # cf.size:([1,64])
+            # cf.size:([num_agents-1,64])
             cf = self.comm_ae.decode(inputs[f'agent_{i}']['comm'][:-1])
             traj_cf = self.comm_tj.decode(inputs[f'agent_{i}']['traj_comm'][:-1])
+            traj_cf_list.append(traj_cf)
             if not self.ae_pg:
                 cf = cf.detach()
                 traj_cf = traj_cf.detach()
@@ -586,9 +657,51 @@ class AENetwork(A3CTemplate):
         x = torch.cat(x, dim=0)
         comm_out, comm_ae_loss = self.comm_ae(x)
         # generate trajectory
-        # TODO: change the input to the right one
-        trajs = self.generate_trajectory(inputs, hidden_state)
-        traj_x = self.traj_processor(trajs)
+        # NOTE: other modeling 0
+        # trajs = self.generate_trajectory(inputs, hidden_state)
+        # traj_x = self.traj_processor(trajs)
+        # traj_comm_out, traj_comm_ae_loss = self.comm_tj(traj_x)
+        # NOTE: other modeling 1
+        all_act_trajs = []
+        all_trajs = [[] for _ in range(self.num_agents)]
+        for i, agent_name in enumerate(inputs.keys()):
+            if agent_name == 'global':
+                continue
+            # TODO: check here
+            other_traj_comm = traj_cf_list[i].view(1,-1)
+            # TODO: check if the global state is at the end
+            acts = self.other_modeling[i](other_traj_comm, x[i])
+            all_act_trajs.append(acts)
+        
+        prev_comm_out = torch.empty((0, self.comm_len))
+        prev_traj_comm_out = torch.empty((0, self.comm_len))
+        prev_comm_out = prev_comm_out.cuda()
+        prev_traj_comm_out = prev_traj_comm_out.cuda()
+        for i in range(self.num_agents):
+            prev_comm_out = torch.cat((prev_comm_out, 
+                                  torch.unsqueeze(inputs[f'agent_{i}']['comm'][-1],0)),dim=0)
+            prev_traj_comm_out = torch.cat((prev_traj_comm_out, 
+                                       torch.unsqueeze(inputs[f'agent_{i}']['traj_comm'][-1],0)),dim=0)
+
+        # excute the acts to generate the imaged traj
+        for j in range(self.pos_and_action_len):
+            all_act_dict = {}
+            for i, agent_name in enumerate(inputs.keys()):
+                if agent_name == 'global':
+                    continue
+                self_pos = self.env.get_agent_pos(self.env.agents[int(agent_name[-1])])
+                act = all_act_trajs[i][j]
+                all_trajs[int(agent_name[-1])].append(act)
+                all_trajs[int(agent_name[-1])].append(self_pos[0])
+                all_trajs[int(agent_name[-1])].append(self_pos[1])
+
+                comm_act = (prev_comm_out[int(agent_name[-1])]).cpu().numpy()
+                traj_comm_act = (prev_traj_comm_out[int(agent_name[-1])]).cpu().numpy()
+                all_act_dict[agent_name] = [act, comm_act, traj_comm_act]
+            inputs, _, _, _ = self.env.step(all_act_dict)
+            inputs = ops.to_state_var(inputs)
+        all_trajs_torch = ops.to_torch(all_trajs)
+        traj_x = self.traj_processor(all_trajs_torch)
         traj_comm_out, traj_comm_ae_loss = self.comm_tj(traj_x)
 
         # (3) predict policy and values separately

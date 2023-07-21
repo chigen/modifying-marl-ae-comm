@@ -181,9 +181,9 @@ def get_config(args, eval=False):
     if eval:
         cfg_id += '_eval'
 
-    exp_name = '{}/a3c_{}_{}'.format(config.env_cfg.env_name, cfg_id, curr_time)
+    exp_name = '{}/0720a3c_{}_{}'.format(config.env_cfg.env_name, curr_time, cfg_id)
 
-    config.exp_name = exp_name
+    config.exp_name = exp_name+'aaa'
 
     return config
 

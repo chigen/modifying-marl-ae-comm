@@ -51,8 +51,11 @@ class Worker(mp.Process):
         self.tau = tau
         self.gpu_id = gpu_id
         self.reward_log = deque(maxlen=5)  # track last 5 finished rewards
+        self.reward0_log = deque(maxlen=5)  # track last 5 finished rewards
+        self.reward1_log = deque(maxlen=5)  # track last 5 finished rewards
         self.pfmt = 'policy loss: {} value loss: {} ' + \
-                    'entropy loss: {} ae loss: {} reward: {}'
+                    'entropy loss: {} ae loss: {} reward: {} ' + \
+                    'reward_0: {} reward_1: {}'
         self.agents = [f'agent_{i}' for i in range(self.env.num_agents)]
         self.num_acts = 1
         self.ae_loss_k = ae_loss_k
@@ -79,8 +82,9 @@ class Worker(mp.Process):
         trajectory = [[] for _ in range(self.num_acts)]
 
         while not check_done(done) and len(trajectory[0]) < self.t_max:
+            # added input: env, into the net.forward
             plogit, value, hidden_state, comm_out, comm_ae_loss, traj_comm_out,\
-                 traj_comm_ae_loss = self.net(state_var, hidden_state)
+                 traj_comm_ae_loss = self.net(state_var, self.env, hidden_state)
             action, _, _, all_actions = self.net.take_action(plogit, comm_out,
                                                              traj_comm_out)
             state, reward, done, info = self.env.step(all_actions)
@@ -97,7 +101,7 @@ class Worker(mp.Process):
         else:
             with torch.no_grad():
                 # this target_value is env_critic_out
-                target_value = self.net(state_var, hidden_state)[1]
+                target_value = self.net(state_var, self.env, hidden_state)[1]
                 if self.num_acts == 1:
                     target_value = [target_value]
 
@@ -121,6 +125,7 @@ class Worker(mp.Process):
         self.master.init_tensorboard()
         done = True
         reward_log = 0.
+        rewards = [0. for _ in range(self.env.num_agents)]
 
         while not self.master.is_done():
             # synchronize network parameters
@@ -140,6 +145,9 @@ class Worker(mp.Process):
 
                 self.reward_log.append(reward_log)
                 reward_log = 0.
+                self.reward0_log.append(rewards[0])
+                self.reward1_log.append(rewards[1])
+                rewards = [0. for _ in range(self.env.num_agents)]
 
             # extract trajectory
             trajectory, values, target_value, done = \
@@ -191,6 +199,7 @@ class Worker(mp.Process):
                         els.append(ops.to_numpy(el))
 
                         reward_log += reward[agent]
+                        rewards[int(agent[-1])] += reward[agent]
                         # TODO: maybe need to modify this later
                         loss += (tl + comm_ae_loss * self.ae_loss_k + 
                                  traj_comm_ae_loss * self.ae_loss_k)
@@ -216,9 +225,12 @@ class Worker(mp.Process):
                     log_dict[f'policy_loss/{act}'] = np.mean(all_pls[act_id])
                     log_dict[f'value_loss/{act}'] = np.mean(all_vls[act_id])
                     log_dict[f'entropy/{act}'] = np.mean(all_els[act_id])
+        
                 log_dict['ae_loss'] = np.mean(comm_ae_losses)
                 log_dict['traj_ae_loss'] = np.mean(traj_comm_ae_losses)
                 log_dict['reward'] = np.mean(self.reward_log)
+                log_dict['reward0'] = np.mean(self.reward0_log)
+                log_dict['reward1'] = np.mean(self.reward1_log)
 
                 for k, v in log_dict.items():
                     self.master.writer.add_scalar(k, v, weight_iter)
@@ -229,7 +241,9 @@ class Worker(mp.Process):
                 np.around(np.mean(all_vls, axis=-1), decimals=5),
                 np.around(np.mean(all_els, axis=-1), decimals=5),
                 np.around(np.mean(comm_ae_losses), decimals=5),
-                np.around(np.mean(self.reward_log), decimals=2)
+                np.around(np.mean(self.reward_log), decimals=2),
+                np.around(np.mean(self.reward0_log), decimals=2),
+                np.around(np.mean(self.reward1_log), decimals=2),
             )
 
             self.master.apply_gradients(self.net)
