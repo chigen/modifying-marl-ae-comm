@@ -120,8 +120,10 @@ class RedBlueDoorsMultiGrid(MultiGridEnv):
         blue_door_opened_before = self.blue_door.is_open()
 
         obs_dict, rew_dict, _, info_dict = MultiGridEnv.step(self, action_dict)
-        step_rewards = np.zeros((self.num_agents, ), dtype=np.float)
+        zeros_rewards = np.zeros((self.num_agents, ), dtype=np.float)
         step_rewards = rew_dict['step_rewards']
+        if not np.array_equal(step_rewards, zeros_rewards):
+            pass
 
         red_door_opened_after = self.red_door.is_open()
         blue_door_opened_after = self.blue_door.is_open()

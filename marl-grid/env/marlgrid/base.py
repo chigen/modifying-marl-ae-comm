@@ -806,7 +806,7 @@ class MultiGridEnv(gym.Env):
                             # the agent which opened the purple door, get +2 reward
                             if fwd_cell.color == 'purple' and not fwd_cell.is_open():
                                 step_rewards += 1.
-                                step_rewards[agent_no] += 1.
+                                # step_rewards[agent_no] += 1.
 
                         fwd_cell.toggle(agent, fwd_pos)
                         

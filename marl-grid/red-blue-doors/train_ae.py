@@ -107,7 +107,7 @@ if __name__ == '__main__':
     # > join when done
     [w.join() for w in workers]
 
-    print('om2, purple door, diff reward, 0 reward when fail')
+    print('om1, purple door, same reward, 0 reward when fail')
 
     master.save_ckpt(cfg.train_iter,
                      osp.join(save_dir_fmt.format('ckpt'), 'latest.pth'))
