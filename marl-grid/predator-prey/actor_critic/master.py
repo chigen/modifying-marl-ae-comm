@@ -79,6 +79,23 @@ class Master(object):
         else:
             self._apply_gradients(net)
         return
+    
+    def record_thermodynamic_charts(self, thermodynamic_charts):
+        with self.iter.get_lock():
+            # the thermodynamic_charts is a list of np array, its format is:
+            # [eval_id][agent_id][np.array]
+            # create different files for each eval_id and agent_id
+
+            if self.iter.value % 100 == 0:
+            
+                for eval_id in range(len(thermodynamic_charts)):
+                    for agent_id in range(len(thermodynamic_charts[eval_id])):
+                        # the csv file name is like: time_eval_id_agent_id_thermo.csv
+                        csv_path = datetime.datetime.now().strftime("%m%d-%H%M%S") + "_eval_" + str(eval_id) + "_agent_" + str(agent_id) + "_thermo.csv"
+                        with open(csv_path, 'a') as f:
+                            writer = csv.writer(f)
+                            writer.writerow(thermodynamic_charts[eval_id][agent_id])
+
 
     def increment(self, progress_str=None,
                   comm_encode=None, comm_out=None, comm_decoded=None, 
@@ -99,32 +116,32 @@ class Master(object):
                     print('[{}/{}] workers are working hard.'.format(
                         self.iter.value, self.max_iteration))
                     
-                if comm_out is not None:
-                    comm_encode = comm_encode.detach().cpu().numpy().tolist()
-                    comm_out = comm_out.detach().cpu().numpy().tolist()
-                    comm_decoded = comm_decoded.detach().cpu().numpy().tolist()
-                    traj_comm_encode = traj_comm_encode.detach().cpu().numpy().tolist()
-                    traj_comm_out = traj_comm_out.detach().cpu().numpy().tolist()
-                    traj_comm_decoded = traj_comm_decoded.detach().cpu().numpy().tolist()
-                    for agent_id in range(len(comm_out)):
-                        comm_encode_path = csv_path + str(agent_id) + "_comm_encode.csv"
-                        self.append_to_csv(comm_encode_path, comm_encode[agent_id])
+                # if comm_out is not None:
+                    # comm_encode = comm_encode.detach().cpu().numpy().tolist()
+                    # comm_out = comm_out.detach().cpu().numpy().tolist()
+                    # comm_decoded = comm_decoded.detach().cpu().numpy().tolist()
+                    # traj_comm_encode = traj_comm_encode.detach().cpu().numpy().tolist()
+                    # traj_comm_out = traj_comm_out.detach().cpu().numpy().tolist()
+                    # traj_comm_decoded = traj_comm_decoded.detach().cpu().numpy().tolist()
+                    # for agent_id in range(len(comm_out)):
+                    #     comm_encode_path = csv_path + str(agent_id) + "_comm_encode.csv"
+                    #     self.append_to_csv(comm_encode_path, comm_encode[agent_id])
 
-                        comm_out_path = csv_path + str(agent_id) + "_comm_out.csv"
-                        # print("agent_{}'s comm is {}".format(agent_id, comm_out))
-                        self.append_to_csv(comm_out_path, comm_out[agent_id])
+                    #     comm_out_path = csv_path + str(agent_id) + "_comm_out.csv"
+                    #     # print("agent_{}'s comm is {}".format(agent_id, comm_out))
+                    #     self.append_to_csv(comm_out_path, comm_out[agent_id])
 
-                        comm_decoded_path = csv_path + str(agent_id) + "_comm_decoded.csv"
-                        self.append_to_csv(comm_decoded_path, comm_decoded[agent_id])
+                    #     comm_decoded_path = csv_path + str(agent_id) + "_comm_decoded.csv"
+                    #     self.append_to_csv(comm_decoded_path, comm_decoded[agent_id])
 
-                        traj_comm_encode_path = csv_path + str(agent_id) + "_traj_comm_encode.csv"
-                        self.append_to_csv(traj_comm_encode_path, traj_comm_encode[agent_id])
+                    #     traj_comm_encode_path = csv_path + str(agent_id) + "_traj_comm_encode.csv"
+                    #     self.append_to_csv(traj_comm_encode_path, traj_comm_encode[agent_id])
                 
-                        traj_comm_out_path = csv_path + str(agent_id) + "_traj_comm_out.csv"
-                        self.append_to_csv(traj_comm_out_path, traj_comm_out[agent_id])
+                    #     traj_comm_out_path = csv_path + str(agent_id) + "_traj_comm_out.csv"
+                    #     self.append_to_csv(traj_comm_out_path, traj_comm_out[agent_id])
 
-                        traj_comm_decoded_path = csv_path + str(agent_id) + "_traj_comm_decoded.csv"
-                        self.append_to_csv(traj_comm_decoded_path, traj_comm_decoded[agent_id])
+                    #     traj_comm_decoded_path = csv_path + str(agent_id) + "_traj_comm_decoded.csv"
+                    #     self.append_to_csv(traj_comm_decoded_path, traj_comm_decoded[agent_id])
 
             if self.iter.value > self.max_iteration:
                 self.done.value = 1

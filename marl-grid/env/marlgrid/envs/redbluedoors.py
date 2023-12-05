@@ -77,7 +77,6 @@ class RedBlueDoorsMultiGrid(MultiGridEnv):
         #         self.grid.set(pos, self.height - 1, doors[i])
         #         doors[i].pos = np.asarray([pos, self.height - 1])
 
-        # NOTE debug output
         # print('red door pos:', doors[0].pos, ' blue door pos:', doors[1].pos)
 
         return None
@@ -135,6 +134,7 @@ class RedBlueDoorsMultiGrid(MultiGridEnv):
 
         done = False
         success = False
+        opened_purple_door = info_dict['opened_purple']
         if blue_door_opened_after:
             if red_door_opened_before:
                 step_rewards += self._reward()
@@ -161,6 +161,7 @@ class RedBlueDoorsMultiGrid(MultiGridEnv):
             'done': done,
             'timeout': timeout,
             'success': success,
+            'opened_purple_door': opened_purple_door,
             # comm
             'comm': obs_dict['global']['comm_act'].tolist(),
             'traj_comm': obs_dict['global']['traj_comm_act'].tolist(),

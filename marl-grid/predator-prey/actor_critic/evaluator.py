@@ -49,13 +49,19 @@ class Evaluator(mp.Process):
         self.video_save_freq = video_save_freq
         self.ckpt_save_dir = save_dir_fmt.format('ckpt')
         self.ckpt_save_freq = ckpt_save_freq
+        self.thermodynamic_charts = []
+        # generate the number of num_eval_episodes 10*10 empty 2d array for each evaluator env
+        for i in range(num_eval_episodes):
+            # each env has two agents, so we need two 2d array
+            self.thermodynamic_charts.append([np.zeros((10, 10)), np.zeros((10, 10))])
 
         # make fixed copies of environment for consistent evaluation
         self.eval_env = []
+        env.reset(is_evaluation=True)
         for _ in range(num_eval_episodes):
             env_copy = copy.deepcopy(env)
             self.eval_env.append(env_copy)
-            env.reset()
+            env.reset(is_evaluation=True)
 
         os.makedirs(self.video_save_dir, exist_ok=True)
         os.makedirs(self.ckpt_save_dir, exist_ok=True)
@@ -93,7 +99,7 @@ class Evaluator(mp.Process):
                 while not check_done(done):
                     if self.net_type == 'ae':
                         # NOTE: delete the last four _ after recording
-                        plogit, _, hidden_state, comm_out, _, traj_comm_out, _, _, _, _, _ = \
+                        plogit, _, hidden_state, comm_out, _, traj_comm_out, _, _, traj, _, _ = \
                                                 self.net(state_var, env_copy, hidden_state)
                         _, _, ent, action = self.net.take_action(plogit,
                                                         comm_out, traj_comm_out)
@@ -108,8 +114,11 @@ class Evaluator(mp.Process):
                     state, reward, done, info = env_copy.step(action)
                     state_var = ops.to_state_var(state)
 
-                    if info['red_door_opened_now']:
-                        t_red_door = info['t']
+                    if info['agents_count']:
+                        for i in range(len(info['agents_count'])):
+                            # update the thermodynamic chart with agents_count value
+                            self.thermodynamic_charts[eval_id][i] = info['agents_count'][i]
+                        print(f'eval_id: {eval_id}, agents_count: {info["agents_count"]}')
 
                     if hasattr(env_copy, 'get_raw_obs'):
                         # get_raw_obs() is in wrappers.py GridWorldEvaluatorWrapper
@@ -133,7 +142,7 @@ class Evaluator(mp.Process):
                 ents = ops.to_numpy(ents)
                 plot_ents(np.asarray(ents), reward['agent_0'], max_time,
                           ent_path, max_ent=[np.log(6), np.log(2)],
-                          t_red_door=t_red_door)
+                          t_red_door=None)
 
                 # save video
                 latest_path = osp.join(self.video_save_dir,
@@ -156,8 +165,9 @@ class Evaluator(mp.Process):
                 log_dict['episode_len'] += max_time
                 log_dict['timeout'] += int(info['timeout'])
                 log_dict['success'] += int(info['success'])
-                log_dict['opened_purple_door'] += int(info['opened_purple_door'])
 
+            # record the thermodynamic charts
+            self.master.record_thermodynamic_charts(self.thermodynamic_charts)
             # average logged info
             for k, v in log_dict.items():
                 self.master.writer.add_scalar(k, v / self.num_eval_episodes,

@@ -13,7 +13,7 @@ from enum import IntEnum
 
 from .utils.video import downsample, fill_coords, point_in_rect, highlight_img
 from .agents import GridAgentInterface
-from .objects import Wall, Goal, COLORS
+from .objects import Wall, Goal, COLORS, GridAgentImaginedTraj
 
 TILE_PIXELS = 32
 
@@ -416,6 +416,7 @@ class MultiGridEnv(gym.Env):
         self.comm_dim = self.agents[0].comm_dim
         self.comm_len = self.agents[0].comm_len
         self.discrete_comm = self.agents[0].discrete_comm
+        self.opened_purple = False
 
         self.reset()
 
@@ -468,7 +469,7 @@ class MultiGridEnv(gym.Env):
                 ' with either a GridAgentInterface object '
                 ' or a dictionary that can be used to initialize one.')
 
-    def reset(self):
+    def reset(self, is_evaluation=False):
         """Resets the env and returns observations from ready agents.
 
         Returns:
@@ -486,6 +487,17 @@ class MultiGridEnv(gym.Env):
                 agent.activate()
 
         self.step_count = 0
+
+        self.is_evaluation = is_evaluation
+        if self.is_evaluation:
+            self.agents_imagined_traj = []
+            for i in range(len(self.agents)):
+                for j in range(4):
+                    imagined_step = GridAgentImaginedTraj(color=self.agents[i].color,is_evaluation=True)
+                    # the initial position of the imagined step is the same as the agent
+                    imagined_step.pos = self.agents[i].pos
+                    self.agents_imagined_traj.append(imagined_step)
+
         obs = self.gen_obs()
 
         obs_dict = {f'agent_{i}': obs[i] for i in range(len(obs))}
@@ -597,6 +609,7 @@ class MultiGridEnv(gym.Env):
         if agent.observation_style == 'image' or image_only:
             return grid_image
         elif agent.observation_style == 'dict':
+            # 'pov' is nessaary 
             ret = {'pov': grid_image}
             if agent.observe_rewards:
                 ret['reward'] = getattr(agent, 'step_reward', 0)
@@ -658,7 +671,7 @@ class MultiGridEnv(gym.Env):
     def __str__(self):
         return self.grid.__str__()
 
-    def step(self, action_dict, purple=True):
+    def step(self, action_dict, purple=False, prey=True, traj=None):
         """Returns observations from ready agents.
 
         The returns are dicts mapping from agent_id strings to values. The
@@ -673,6 +686,13 @@ class MultiGridEnv(gym.Env):
                 '__all__' (required) is used to indicate env termination.
             infos (dict): Optional info values for each agent id.
         """
+
+        if traj is not None:
+            # Only pass traj in evaluation mode, change the GridAgentImaginedTraj's pos
+            for i, agent in enumerate(self.agents):
+                for j in range(4):
+                    self.agents_imagined_traj[i*4+j].pos = np.array([traj[i][3*j+1], traj[i][3*j+2]])
+
         # TODO add collision check and give penalty reward in step function
         # Spawn agents if it's time.
         for agent in self.agents:
@@ -684,6 +704,11 @@ class MultiGridEnv(gym.Env):
         actions = [action_dict[f'agent_{i}'] for i in range(len(self.agents))]
 
         step_rewards = np.zeros((len(self.agents, )), dtype=np.float)
+        # use a variable to record agent's current action's reward
+        # 0 means this agent doesn't catch a prey, reward is -1
+        # 1 means this agent catch a prey, this agent's reward is 1, other agents reward is 0.3
+        # 2 means this agent is near a prey, reward is 0.3
+        reward_status = np.zeros((len(self.agents, )), dtype=np.float)
         env_rewards = np.zeros((len(self.agents, )), dtype=np.float)
 
         comm_rewards = np.zeros((len(self.agents, )), dtype=np.float)
@@ -774,10 +799,18 @@ class MultiGridEnv(gym.Env):
                                 env_rew, step_rew = self._get_reward(
                                     rwd, agent_no)
                                 env_rewards += env_rew
-                                step_rewards += step_rew
+                                # step_rewards += step_rew
 
                         if isinstance(fwd_cell, Goal):
                             agent.done = True
+                    # check if the agent is near a prey, that is, there is a prey around the agent
+                    if prey:
+                        direction = np.array([[1, 0], [0, 1], [-1, 0], [0, -1]])
+                        for i in range(4):
+                            if self.grid.get(*(cur_pos + direction[i])) is not None:
+                                if self.grid.get(*(cur_pos + direction[i])).type == 'prey':
+                                    reward_status[agent_no] = 2
+                                    break
 
                 # Pick up an object
                 elif action == agent.actions.pickup:
@@ -806,6 +839,7 @@ class MultiGridEnv(gym.Env):
                             # the agent which opened the purple door, get +2 reward
                             if fwd_cell.color == 'purple' and not fwd_cell.is_open():
                                 step_rewards += 1.
+                                self.opened_purple = True
                                 # step_rewards[agent_no] += 1.
 
                         fwd_cell.toggle(agent, fwd_pos)
@@ -815,6 +849,10 @@ class MultiGridEnv(gym.Env):
                                 opened_doors[fwd_cell.color] = 1
                             else:
                                 opened_doors[fwd_cell.color] = -1
+                        if prey:
+                            if fwd_cell.type == 'prey' or fwd_cell.color == 'green':
+                                reward_status[agent_no] = 1
+                                fwd_cell.toggle(agent, fwd_pos)
                     else:
                         pass
 
@@ -827,6 +865,19 @@ class MultiGridEnv(gym.Env):
                         f'Environment cannot handle action {action}.')
                 # NOTE need to find out what is prestige and on_step
                 agent.on_step(fwd_cell if agent_moved else None)
+
+                # if one agent's reward_status is still 0, then it means this agent doesn't catch a prey or near a prey
+                # set the reward now
+                if prey:
+                    if reward_status[agent_no] == 0:
+                        step_rewards[agent_no] += -1.
+                    elif reward_status[agent_no] == 1:
+                        step_rewards[agent_no] += 10.
+                        for i in range(len(reward_status)):
+                            if i != agent_no:
+                                step_rewards[i] += 3
+                    elif reward_status[agent_no] == 2:
+                        step_rewards[agent_no] += 3
 
         # If any of the agents individually are "done" (hit Goal)
         # but the env requires respawning, respawn those agents.
@@ -860,7 +911,10 @@ class MultiGridEnv(gym.Env):
         obs = self.gen_obs()
         obs_dict = {f'agent_{i}': obs[i] for i in range(len(obs))}
         # change here, use info to convey the info if the door is opened correctly
-        info_dict = {'comm_strs': comm_strs}
+        info_dict = {'comm_strs': comm_strs,}
+        if purple:
+            info_dict = {'comm_strs': comm_strs,
+                     'opened_purple': self.opened_purple,}
         if self.collision_penalty<0:
             info_dict = {**info_dict, **opened_doors}
 
@@ -1004,7 +1058,7 @@ class MultiGridEnv(gym.Env):
                 if show_more:
                     col = np.full((img.shape[0],
                                    2 * target_partial_width +
-                                   4 * agent_col_padding_px + 192,
+                                   4 * agent_col_padding_px,
                                    3),
                                   pad_grey, dtype=np.uint8)
                 else:

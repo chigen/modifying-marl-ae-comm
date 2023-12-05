@@ -173,6 +173,19 @@ class GridAgent(WorldObj):
                                  theta=1.5 * np.pi * self.dir)
         fill_coords(img, shape_fn, COLORS[self.color])
 
+class GridAgentImaginedTraj(WorldObj):
+    # this class is used to render the imagined trajectory of the agent
+    def __init__(self, *args, color='red', is_evaluation=False):
+        super().__init__(*args, **{'color': color})
+        self.metadata = {
+            'color': color,
+        }
+        self.is_evaluation = is_evaluation
+    
+    def render(self, img):
+        if self.is_evaluation:
+            shape_fn = point_in_circle(0.5, 0.5, 0.2)
+            fill_coords(img, shape_fn, COLORS[self.color])
 
 class BulkObj(WorldObj, metaclass=RegisteredObjectType):
     def __hash__(self):
@@ -300,3 +313,39 @@ class FreeDoor(WorldObj):
 
             # Draw door handle
             fill_coords(img, point_in_circle(cx=0.75, cy=0.50, r=0.08), c)
+
+# prey class, which is a circle smaller than the agent and can move around
+class Prey(WorldObj):
+    # define a state status for prey
+    class states(IntEnum):
+        alive = 0
+        dead = 1
+
+    def is_dead(self):
+        return self.state == self.states.dead
+
+    def can_overlap(self):
+        return True
+
+    def see_behind(self):
+        return self.is_dead()
+    
+    def toggle(self, agent, pos):
+        if self.state == self.states.alive:
+            self.state = self.states.dead
+        elif self.state == self.states.dead:
+            # when a prey is dead, it disappears
+            pass
+        else:
+            raise ValueError(f'?!?!?! Prey in state {self.state}')
+        return True
+
+    def render(self, img):
+        c = COLORS[self.color]
+
+        if self.state == self.states.alive:
+            fill_coords(img, point_in_circle(0.5, 0.5, 0.31), c)
+            fill_coords(img, point_in_circle(0.5, 0.5, 0.25), (0, 0, 0))
+        else:
+            # the prey is dead, render nothing
+            pass
